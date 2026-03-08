@@ -6,7 +6,7 @@ name: Release LSP
 on:
   push:
     tags:
-      - "lsp-v*"
+      - "v*"
 
 permissions:
   contents: write

@@ -12,17 +12,16 @@
 publish = false
 # Use git-cliff for changelog generation.
 changelog_config = "cliff.toml"
+# Single tag per release using the standard v* prefix.
+tag_name = "v{{ version }}"
 
 [[package]]
 name = "update-versions-lsp"
-# Must match the `on.push.tags` pattern in release-lsp.yml.
-tag_name = "lsp-v{{ version }}"
 # Write changelog entries to the root CHANGELOG.md (LSP drives the history).
 changelog_path = "CHANGELOG.md"
 
 [[package]]
 name = "update-versions"
-tag_name = "extension-v{{ version }}"
 # The extension (WASM shim) follows the same version as the LSP server but
 # doesn't need its own changelog section — changes are reflected in the LSP's.
 changelog_update = false
