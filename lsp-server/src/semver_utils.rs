@@ -1,44 +1,5 @@
 use semver::{Version, VersionReq};
 
-/// The update kind (how significant the version bump is).
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UpdateKind {
-    UpToDate,
-    Patch,
-    Minor,
-    Major,
-}
-
-/// Compare the current version constraint against the latest available version.
-/// Returns the kind of update needed, or `None` if the versions can't be parsed.
-#[allow(dead_code)]
-pub fn classify_update(current_constraint: &str, latest_version: &str) -> Option<UpdateKind> {
-    let latest = Version::parse(latest_version).ok()?;
-
-    // Try parsing as a version requirement (supports ^, ~, >=, etc.)
-    let normalized = normalize_constraint(current_constraint);
-    let req = VersionReq::parse(&normalized).ok()?;
-
-    if req.matches(&latest) {
-        return Some(UpdateKind::UpToDate);
-    }
-
-    // Extract the "base" version from the constraint for comparison
-    let current_base = extract_base_version(current_constraint)?;
-    let current = Version::parse(&current_base).ok()?;
-
-    if latest.major > current.major {
-        Some(UpdateKind::Major)
-    } else if latest.minor > current.minor {
-        Some(UpdateKind::Minor)
-    } else if latest.patch > current.patch {
-        Some(UpdateKind::Patch)
-    } else {
-        Some(UpdateKind::UpToDate)
-    }
-}
-
 /// Normalize ecosystem-specific version constraint syntax to semver VersionReq format.
 fn normalize_constraint(constraint: &str) -> String {
     let trimmed = constraint.trim();
@@ -142,13 +103,6 @@ pub fn build_replacement_text(original: &str, new_version: &str) -> String {
     format!("{}{}", operator, new_version)
 }
 
-/// Extract just the operator prefix from a version constraint.
-#[allow(dead_code)]
-pub fn extract_operator(constraint: &str) -> &str {
-    let end = constraint.find(|c: char| c.is_ascii_digit()).unwrap_or(0);
-    &constraint[..end]
-}
-
 /// All update candidates discovered for a given version constraint.
 #[derive(Debug, Clone, Default)]
 pub struct UpdateCandidates {
@@ -231,64 +185,6 @@ pub fn find_latest(versions: &[String]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // --- classify_update tests ---
-
-    #[test]
-    fn test_up_to_date_caret() {
-        assert_eq!(
-            classify_update("^18.2.0", "18.2.0"),
-            Some(UpdateKind::UpToDate)
-        );
-    }
-
-    #[test]
-    fn test_up_to_date_caret_within_range() {
-        assert_eq!(
-            classify_update("^18.2.0", "18.3.0"),
-            Some(UpdateKind::UpToDate)
-        );
-    }
-
-    #[test]
-    fn test_major_update_caret() {
-        assert_eq!(
-            classify_update("^18.2.0", "19.0.0"),
-            Some(UpdateKind::Major)
-        );
-    }
-
-    #[test]
-    fn test_minor_update_tilde() {
-        assert_eq!(classify_update("~1.2.0", "1.3.0"), Some(UpdateKind::Minor));
-    }
-
-    #[test]
-    fn test_patch_update_tilde() {
-        // ~1.2.0 matches >=1.2.0 <1.3.0, so 1.2.5 is in range
-        assert_eq!(
-            classify_update("~1.2.0", "1.2.5"),
-            Some(UpdateKind::UpToDate)
-        );
-    }
-
-    #[test]
-    fn test_major_update_bare_version() {
-        assert_eq!(classify_update("1.0.0", "2.0.0"), Some(UpdateKind::Major));
-    }
-
-    #[test]
-    fn test_minor_update_bare_version() {
-        assert_eq!(
-            classify_update("1.0.0", "1.1.0"),
-            Some(UpdateKind::UpToDate) // bare "1.0.0" is treated as ^1.0.0
-        );
-    }
-
-    #[test]
-    fn test_patch_update() {
-        assert_eq!(classify_update("=1.2.0", "1.2.3"), Some(UpdateKind::Patch));
-    }
 
     // --- normalize_constraint tests ---
 
@@ -374,28 +270,6 @@ mod tests {
     #[test]
     fn test_replace_ruby_pessimistic() {
         assert_eq!(build_replacement_text("~>1.2", "1.3.0"), "~>1.3.0");
-    }
-
-    // --- extract_operator tests ---
-
-    #[test]
-    fn test_operator_caret() {
-        assert_eq!(extract_operator("^1.2.3"), "^");
-    }
-
-    #[test]
-    fn test_operator_tilde() {
-        assert_eq!(extract_operator("~1.2.3"), "~");
-    }
-
-    #[test]
-    fn test_operator_gte() {
-        assert_eq!(extract_operator(">=1.2.3"), ">=");
-    }
-
-    #[test]
-    fn test_operator_bare() {
-        assert_eq!(extract_operator("1.2.3"), "");
     }
 
     // --- find_latest tests ---

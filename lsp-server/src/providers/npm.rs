@@ -161,6 +161,23 @@ fn parse_package_json(content: &str, dependency_keys: &[String]) -> Vec<ParsedDe
                 None => continue,
             };
 
+            // Handle npm package aliases: "alias": "npm:package@version"
+            if let Some(rest) = version_str.strip_prefix("npm:") {
+                if let Some((pkg_name, ver)) = split_npm_alias(rest) {
+                    if let Some(range) =
+                        find_npm_alias_version_range(&lines, name, version_str, pkg_name, ver)
+                    {
+                        deps.push(ParsedDependency {
+                            name: pkg_name.to_string(),
+                            version_constraint: ver.to_string(),
+                            version_range: range,
+                        });
+                    }
+                }
+                // No version part (e.g. bare "npm:react") — skip
+                continue;
+            }
+
             // Skip non-version values
             if is_unsupported_specifier(version_str) {
                 continue;
@@ -205,9 +222,70 @@ fn is_unsupported_specifier(value: &str) -> bool {
         "https://",
     ];
     prefixes.iter().any(|p| value.starts_with(p))
-        || value.starts_with("npm:")
         || value == "*"
         || value == "latest"
+}
+
+/// Parse an `npm:` alias value into `(package_name, version_constraint)`.
+///
+/// Returns `None` if the value has no version part (e.g. bare `"npm:react"`).
+///
+/// Handles scoped packages: `npm:@scope/pkg@^1.0.0` → `("@scope/pkg", "^1.0.0")`.
+fn split_npm_alias(rest: &str) -> Option<(&str, &str)> {
+    // `rest` is everything after the leading "npm:".
+    let at_pos = if rest.starts_with('@') {
+        // Scoped package: the name ends at the `@` that follows the `/`.
+        let slash = rest.find('/')?;
+        rest[slash..].find('@').map(|i| slash + i)?
+    } else {
+        rest.find('@')?
+    };
+    let pkg = &rest[..at_pos];
+    let ver = &rest[at_pos + 1..];
+    if pkg.is_empty() || ver.is_empty() {
+        return None;
+    }
+    Some((pkg, ver))
+}
+
+/// Find the LSP range for the *version* part of an `npm:pkg@version` alias value.
+///
+/// `alias_key` is the key in package.json (e.g. `"react-19"`).
+/// `full_value` is the raw specifier (e.g. `"npm:react@^19.0.0"`).
+/// `pkg_name` is the resolved package name (e.g. `"react"`).
+/// `version_str` is the version constraint portion (e.g. `"^19.0.0"`).
+fn find_npm_alias_version_range(
+    lines: &[&str],
+    alias_key: &str,
+    full_value: &str,
+    pkg_name: &str,
+    version_str: &str,
+) -> Option<Range> {
+    let alias_pattern = format!("\"{}\"", alias_key);
+    let full_value_pattern = format!("\"{}\"", full_value);
+    let prefix = format!("npm:{}@", pkg_name);
+
+    for (line_idx, line) in lines.iter().enumerate() {
+        if !line.contains(&alias_pattern) {
+            continue;
+        }
+        if let Some(val_start) = line.find(&full_value_pattern) {
+            // +1 skips the opening quote; prefix.len() skips "npm:pkg@"
+            let content_start = val_start + 1 + prefix.len();
+            let content_end = content_start + version_str.len();
+            return Some(Range {
+                start: Position {
+                    line: line_idx as u32,
+                    character: content_start as u32,
+                },
+                end: Position {
+                    line: line_idx as u32,
+                    character: content_end as u32,
+                },
+            });
+        }
+    }
+    None
 }
 
 /// Find the range (line + character offsets) of a version string within the document.
@@ -260,7 +338,6 @@ mod tests {
         assert!(is_unsupported_specifier("workspace:*"));
         assert!(is_unsupported_specifier("github:user/repo"));
         assert!(is_unsupported_specifier("git+https://github.com/user/repo"));
-        assert!(is_unsupported_specifier("npm:some-package"));
         assert!(is_unsupported_specifier("*"));
         assert!(is_unsupported_specifier("latest"));
 
@@ -268,6 +345,77 @@ mod tests {
         assert!(!is_unsupported_specifier("~1.2.3"));
         assert!(!is_unsupported_specifier(">=1.0.0"));
         assert!(!is_unsupported_specifier("1.0.0"));
+    }
+
+    #[test]
+    fn test_split_npm_alias() {
+        assert_eq!(split_npm_alias("react@^19.0.0"), Some(("react", "^19.0.0")));
+        assert_eq!(
+            split_npm_alias("@scope/pkg@~1.2.3"),
+            Some(("@scope/pkg", "~1.2.3"))
+        );
+        // No version — should return None
+        assert_eq!(split_npm_alias("react"), None);
+        assert_eq!(split_npm_alias("@scope/pkg"), None);
+    }
+
+    #[test]
+    fn test_parse_package_json_npm_alias() {
+        let content = r#"{
+  "dependencies": {
+    "react-19": "npm:react@^19.0.0",
+    "react": "^18.2.0"
+  }
+}"#;
+        let keys = vec!["dependencies".to_string()];
+        let deps = parse_package_json(content, &keys);
+
+        assert_eq!(deps.len(), 2);
+
+        let alias = deps.iter().find(|d| d.name == "react" && d.version_constraint == "^19.0.0");
+        let alias = alias.expect("npm alias dependency should be parsed");
+        // Range should point to the version part, not the full value
+        assert_eq!(alias.version_range.start.line, 2);
+        // "npm:react@" is 10 chars; opening quote + 2-space indent for value is at some col
+        // Just verify start < end and the span equals the version string length
+        assert_eq!(
+            (alias.version_range.end.character - alias.version_range.start.character) as usize,
+            "^19.0.0".len()
+        );
+
+        let plain = deps.iter().find(|d| d.name == "react" && d.version_constraint == "^18.2.0");
+        assert!(plain.is_some(), "plain react dep should still be parsed");
+    }
+
+    #[test]
+    fn test_parse_package_json_npm_alias_scoped() {
+        let content = r#"{
+  "dependencies": {
+    "my-react": "npm:@scope/react@^1.0.0"
+  }
+}"#;
+        let keys = vec!["dependencies".to_string()];
+        let deps = parse_package_json(content, &keys);
+
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0].name, "@scope/react");
+        assert_eq!(deps[0].version_constraint, "^1.0.0");
+    }
+
+    #[test]
+    fn test_parse_package_json_npm_alias_bare_skipped() {
+        // bare "npm:react" with no version — should be silently skipped
+        let content = r#"{
+  "dependencies": {
+    "react-alias": "npm:react",
+    "lodash": "^4.0.0"
+  }
+}"#;
+        let keys = vec!["dependencies".to_string()];
+        let deps = parse_package_json(content, &keys);
+
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0].name, "lodash");
     }
 
     #[test]
