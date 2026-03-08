@@ -84,7 +84,7 @@ impl UpdateVersionsExtension {
 
             let release_asset = format!("update-versions-lsp-{arch_str}-{os_str}{ext}");
             let url = format!(
-                "https://github.com/christophehurpeau/zed-update-versions/releases/download/v{LSP_VERSION}/{release_asset}"
+                "https://github.com/christophehurpeau/zed-update-versions/releases/download/update-versions-lsp-v{LSP_VERSION}/{release_asset}"
             );
 
             zed::set_language_server_installation_status(

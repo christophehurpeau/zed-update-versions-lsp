@@ -1,6 +1,6 @@
 name: Release LSP
 
-# Triggered by tags of the form `v*` (e.g. `v0.1.0`).
+# Triggered by tags of the form `update-versions-lsp-v*` (e.g. `update-versions-lsp-v0.1.0`).
 # Builds the native LSP server for every supported platform and uploads the
 # binaries as assets of a GitHub Release.
 on:
@@ -21,9 +21,6 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             runner: macos-latest
-            binary: update-versions-lsp
-          - target: x86_64-apple-darwin
-            runner: macos-13
             binary: update-versions-lsp
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
@@ -87,7 +84,8 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Upload assets to existing release
+      - name: Create release and upload assets
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
+          generate_release_notes: true
