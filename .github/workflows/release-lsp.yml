@@ -1,0 +1,94 @@
+name: Release LSP
+
+# Triggered by tags of the form `lsp-v*` (e.g. `lsp-v0.1.0`).
+# Builds the native LSP server for every supported platform and uploads the
+# binaries as assets of a GitHub Release.
+on:
+  push:
+    tags:
+      - "lsp-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            binary: update-versions-lsp
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            binary: update-versions-lsp
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            binary: update-versions-lsp
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            binary: update-versions-lsp
+            cross: true
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            binary: update-versions-lsp.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross (Linux cross-compilation)
+        if: matrix.cross
+        run: cargo install cross --locked
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --manifest-path lsp-server/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Build (native)
+        if: "!matrix.cross"
+        run: cargo build --release --manifest-path lsp-server/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Rename binary for upload
+        shell: bash
+        run: |
+          src="lsp-server/target/${{ matrix.target }}/release/${{ matrix.binary }}"
+          # Strip .exe for the suffix determination, then re-add if needed.
+          base="${{ matrix.binary }}"
+          ext=""
+          if [[ "$base" == *.exe ]]; then
+            ext=".exe"
+            base="${base%.exe}"
+          fi
+          dst="${base}-${{ matrix.target }}${ext}"
+          cp "$src" "$dst"
+          echo "ASSET_PATH=$dst" >> "$GITHUB_ENV"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.ASSET_PATH }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
