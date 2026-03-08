@@ -1,6 +1,6 @@
 name: Release LSP
 
-# Triggered by tags of the form `lsp-v*` (e.g. `lsp-v0.1.0`).
+# Triggered by tags of the form `v*` (e.g. `v0.1.0`).
 # Builds the native LSP server for every supported platform and uploads the
 # binaries as assets of a GitHub Release.
 on:
