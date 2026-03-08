@@ -18,6 +18,10 @@
 9. [Show / Hide Toggle](#9-show--hide-toggle)
 10. [One-Click Updates](#10-one-click-updates)
 11. [Caching Strategy](#11-caching-strategy)
+    - 11.1 In-Memory Cache
+    - 11.2 Background Expiry Sweep
+    - 11.3 Fetch Deduplication
+    - 11.4 Lazy / Proactive Fetching
 12. [Authentication](#12-authentication)
 13. [Logging](#13-logging)
 14. [Build & Distribution](#14-build--distribution)
@@ -892,16 +896,21 @@ fn build_replacement_text(original: &str, new_version: &str) -> String {
 pub type CacheKey = String;
 
 pub struct VersionCache {
-    store:    tokio::sync::RwLock<HashMap<CacheKey, CacheEntry>>,
-    inflight: tokio::sync::Mutex<HashMap<CacheKey, tokio::sync::broadcast::Sender<VersionResult>>>,
-    ttl:      Duration,
+    store:     tokio::sync::RwLock<HashMap<CacheKey, CacheEntry>>,
+    inflight:  tokio::sync::Mutex<HashMap<CacheKey, tokio::sync::broadcast::Sender<VersionResult>>>,
+    ttl_ms:    AtomicU64,
+    /// Notified on every `set()` call; used by the background sweep to avoid
+    /// running any timers while the cache is empty.
+    populated: tokio::sync::Notify,
 }
 
 impl VersionCache {
     pub fn new(ttl: Duration) -> Self { ... }
     pub async fn get(&self, key: &str) -> Option<VersionResult> { ... }
-    pub async fn set(&self, key: CacheKey, result: VersionResult) { ... }
-    pub async fn invalidate(&self, key: &str) { ... }
+    pub async fn set(&self, key: CacheKey, result: VersionResult) { ... }  // calls populated.notify_one()
+    pub async fn is_empty(&self) -> bool { ... }
+    pub async fn wait_until_populated(&self) { ... }  // blocks until notify_one() fires
+    pub async fn purge_expired(&self) { ... }         // retains only non-expired entries; skips write lock when empty
 }
 ```
 
@@ -909,7 +918,22 @@ impl VersionCache {
 - Cache is in-process; it is discarded when the LSP server exits (when Zed closes).
 - There is no disk persistence. Re-fetches happen on next server start.
 
-### 11.2 Fetch Deduplication
+### 11.2 Background Expiry Sweep
+
+A `tokio::spawn` task runs for the lifetime of the server and evicts stale entries on a 60-second cadence **only while the cache is non-empty**. When empty, the task is fully dormant — parked on `Notify::notified()` with no active timers — so it does not prevent the OS from sleeping.
+
+```
+loop {
+    wait_until_populated()   // no timers; blocks until set() is called
+    loop {
+        sleep(60 s)
+        purge_expired()
+        if is_empty() { break }   // go dormant again
+    }
+}
+```
+
+### 11.3 Fetch Deduplication
 
 Multiple concurrent requests for the same package are deduplicated via an inflight broadcast-channel map. All fetch sites in the backend call `cache.resolve(...)` instead of the raw `cache.get + cache.set` pair:
 
@@ -942,7 +966,7 @@ where
 
 The `Send` bounds on `F` and `Fut` are required because `resolve` is used both inside `tokio::spawn` tasks and inside `async_trait` methods (which are `Send`).
 
-### 11.3 Lazy / Proactive Fetching
+### 11.4 Lazy / Proactive Fetching
 
 - **Proactive prefetch** (`did_open`): when a manifest is opened, versions for all parsed dependencies are fetched in a background task via `cache.resolve()`. After they land, a `textDocument/inlayHint` refresh is requested so Zed re-renders hints with real data.
 - **On-demand fetch** (`inlayHint`): dependencies not yet in cache are rendered as `… fetching` and a background task resolves them via `cache.resolve()`, triggering a refresh on completion.

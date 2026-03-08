@@ -45,12 +45,37 @@ impl Backend {
         let settings = Settings::default();
         let config = ConfigManager::new();
         let cache_ttl = Duration::from_secs(settings.cache_ttl_secs);
+        let cache = Arc::new(VersionCache::new(cache_ttl));
+
+        // Background sweep task: evict expired entries periodically, but only
+        // while the cache is non-empty.  When the cache is empty the task
+        // blocks on a Notify with no active timers, so it does not prevent the
+        // OS from sleeping.
+        {
+            let cache = Arc::clone(&cache);
+            tokio::spawn(async move {
+                loop {
+                    // No timers here — block until something is inserted.
+                    cache.wait_until_populated().await;
+                    // Purge on a 60-second cadence for as long as the cache
+                    // holds entries.  Once it empties, break back to the
+                    // outer loop and go dormant again.
+                    loop {
+                        tokio::time::sleep(Duration::from_secs(60)).await;
+                        cache.purge_expired().await;
+                        if cache.is_empty().await {
+                            break;
+                        }
+                    }
+                }
+            });
+        }
 
         Self {
             client,
             documents: Arc::new(RwLock::new(HashMap::new())),
             config: Arc::new(config),
-            cache: Arc::new(VersionCache::new(cache_ttl)),
+            cache,
             providers: Arc::new(RwLock::new(build_providers(&settings))),
             log_reload_handle,
         }

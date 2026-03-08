@@ -12,7 +12,6 @@ pub struct ConfigManager {
 /// Persistent settings from Zed's `settings.json` under `"update-versions"`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct Settings {
     #[serde(default)]
     pub hide_prereleases: bool,

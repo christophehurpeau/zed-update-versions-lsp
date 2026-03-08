@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 
 /// Result of a version lookup from a registry.
 #[derive(Debug, Clone)]
@@ -22,6 +22,9 @@ pub struct VersionCache {
     inflight: Mutex<HashMap<String, broadcast::Sender<VersionResult>>>,
     /// TTL stored in milliseconds so it can be updated atomically at runtime.
     ttl_ms: AtomicU64,
+    /// Notified whenever an entry is inserted; used by the background sweep
+    /// task to avoid running any timers while the cache is empty.
+    populated: Notify,
 }
 
 impl VersionCache {
@@ -30,6 +33,7 @@ impl VersionCache {
             store: RwLock::new(HashMap::new()),
             inflight: Mutex::new(HashMap::new()),
             ttl_ms: AtomicU64::new(ttl.as_millis() as u64),
+            populated: Notify::new(),
         }
     }
 
@@ -60,12 +64,34 @@ impl VersionCache {
                 inserted_at: Instant::now(),
             },
         );
+        // Wake the background sweep task if it is dormant.
+        self.populated.notify_one();
     }
 
-    /// Remove a specific entry.
-    #[allow(dead_code)]
-    pub async fn invalidate(&self, key: &str) {
-        self.store.write().await.remove(key);
+    pub async fn is_empty(&self) -> bool {
+        self.store.read().await.is_empty()
+    }
+
+    /// Blocks until at least one entry has been inserted since the last time
+    /// this returned.  Returns immediately if a permit is already queued
+    /// (i.e. `set` was called while no one was waiting).
+    pub async fn wait_until_populated(&self) {
+        self.populated.notified().await;
+    }
+
+    /// Remove all entries that have exceeded the TTL.
+    /// Skips the write lock entirely when the cache is empty.
+    pub async fn purge_expired(&self) {
+        // Cheap read-lock check — avoids acquiring an exclusive write lock when
+        // there is nothing to clean up.
+        if self.store.read().await.is_empty() {
+            return;
+        }
+        let ttl = Duration::from_millis(self.ttl_ms.load(Ordering::Relaxed));
+        self.store
+            .write()
+            .await
+            .retain(|_, entry| entry.inserted_at.elapsed() < ttl);
     }
 
     /// Resolve a version, using cache and inflight deduplication.
@@ -162,24 +188,6 @@ mod tests {
 
         assert!(cache.get("npm:react").await.is_some());
         tokio::time::sleep(Duration::from_millis(60)).await;
-        assert!(cache.get("npm:react").await.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_cache_invalidate() {
-        let cache = VersionCache::new(Duration::from_secs(300));
-        cache
-            .set(
-                "npm:react".to_string(),
-                VersionResult {
-                    stable_versions: vec!["18.0.0".to_string()],
-                    prerelease: None,
-                },
-            )
-            .await;
-        assert!(cache.get("npm:react").await.is_some());
-
-        cache.invalidate("npm:react").await;
         assert!(cache.get("npm:react").await.is_none());
     }
 
@@ -420,5 +428,97 @@ mod tests {
             cache.get("npm:react").await.is_some(),
             "entry should still be valid after TTL was extended"
         );
+    }
+
+    /// purge_expired must physically remove entries that have outlived the TTL
+    /// and leave live entries untouched.
+    #[tokio::test]
+    async fn test_purge_expired_removes_stale_entries() {
+        let cache = VersionCache::new(Duration::from_millis(30));
+        cache
+            .set(
+                "npm:stale".to_string(),
+                VersionResult {
+                    stable_versions: vec!["1.0.0".to_string()],
+                    prerelease: None,
+                },
+            )
+            .await;
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Insert a fresh entry after the original one has expired.
+        cache
+            .set(
+                "npm:fresh".to_string(),
+                VersionResult {
+                    stable_versions: vec!["2.0.0".to_string()],
+                    prerelease: None,
+                },
+            )
+            .await;
+
+        cache.purge_expired().await;
+
+        assert!(
+            cache.store.read().await.get("npm:stale").is_none(),
+            "stale entry must be physically removed"
+        );
+        assert!(
+            cache.store.read().await.get("npm:fresh").is_some(),
+            "live entry must survive purge"
+        );
+    }
+
+    /// purge_expired on an empty cache must be a no-op (no panic, no write lock).
+    #[tokio::test]
+    async fn test_purge_expired_empty_cache() {
+        let cache = VersionCache::new(Duration::from_secs(300));
+        cache.purge_expired().await; // must not panic
+        assert!(cache.store.read().await.is_empty());
+    }
+
+    /// wait_until_populated must return immediately when a permit was already
+    /// queued by a prior set() call, and must block until set() is called when
+    /// the cache starts empty.
+    #[tokio::test]
+    async fn test_wait_until_populated() {
+        let cache = Arc::new(VersionCache::new(Duration::from_secs(300)));
+
+        // Case 1: permit already queued — returns without spawning anything.
+        cache
+            .set(
+                "npm:react".to_string(),
+                VersionResult {
+                    stable_versions: vec!["18.0.0".to_string()],
+                    prerelease: None,
+                },
+            )
+            .await;
+        tokio::time::timeout(Duration::from_millis(10), cache.wait_until_populated())
+            .await
+            .expect("must return immediately when permit is already queued");
+
+        // Case 2: cache starts empty — blocks until set() fires.
+        let cache2 = Arc::new(VersionCache::new(Duration::from_secs(300)));
+        let cache3 = Arc::clone(&cache2);
+        let handle = tokio::spawn(async move {
+            cache3.wait_until_populated().await;
+        });
+        // Give the spawned task time to park on notified().
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        cache2
+            .set(
+                "npm:lodash".to_string(),
+                VersionResult {
+                    stable_versions: vec!["4.17.21".to_string()],
+                    prerelease: None,
+                },
+            )
+            .await;
+        tokio::time::timeout(Duration::from_millis(100), handle)
+            .await
+            .expect("task must complete after set() is called")
+            .unwrap();
     }
 }

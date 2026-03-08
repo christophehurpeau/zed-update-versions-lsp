@@ -199,7 +199,7 @@ pub(crate) fn find_toml_version_range(
     // Strategy: find a line starting with `[dep_key]` or `[dep_key.` header,
     // then find `name = ...` within that section.
 
-    let header_variants = build_section_headers(dep_key);
+    let section_header = build_section_headers(dep_key);
     let mut in_section = false;
 
     for (line_idx, line) in lines.iter().enumerate() {
@@ -207,7 +207,7 @@ pub(crate) fn find_toml_version_range(
 
         // Check if we're entering the right section
         if trimmed.starts_with('[') {
-            in_section = header_variants.iter().any(|h| trimmed == h.as_str());
+            in_section = trimmed == section_header;
             continue;
         }
 
@@ -248,11 +248,11 @@ pub(crate) fn find_toml_version_range(
     None
 }
 
-/// Build the possible TOML section headers for a dep_key.
-/// e.g. "dependencies" → `["[dependencies]"]`
-/// e.g. "workspace.dependencies" → `["[workspace.dependencies]"]`
-fn build_section_headers(dep_key: &str) -> Vec<String> {
-    vec![format!("[{}]", dep_key)]
+/// Build the TOML section header for a dep_key.
+/// e.g. "dependencies" → `"[dependencies]"`
+/// e.g. "workspace.dependencies" → `"[workspace.dependencies]"`
+fn build_section_headers(dep_key: &str) -> String {
+    format!("[{}]", dep_key)
 }
 
 #[cfg(test)]
