@@ -48,6 +48,7 @@ Each package line is annotated with one of the following states:
 | **Patch update available** | A newer patch version exists (e.g. bug fixes) | `↑ 4.2.3` |
 | **Minor update available** | A newer minor version exists (new features, backwards-compatible) | `↑ 4.3.0` |
 | **Major update available** | A newer major version exists (potentially breaking changes) | `↑ 5.0.0` |
+| **Version not found** | The declared version constraint does not match any version in the registry; higher versions may still be available as code-action suggestions | `✘ not found` |
 | **Not found** | Package could not be found in the registry | `✘ Not found` |
 | **Unsupported** | Version constraint syntax is not recognised (e.g. git URLs) | `⊘ Unsupported` |
 | **Loading** | Fetch in progress | `… fetching` |
@@ -56,7 +57,13 @@ Colours for each state are configurable to ensure good contrast with any editor 
 
 ### 2.2 Version Range Awareness
 
-The extension understands semantic version range operators (`^`, `~`, `>=`, `*`, etc.) and interprets them correctly. If your declared range already satisfies the latest version, no update is suggested. Only genuinely newer versions that fall outside the declared range are surfaced.
+The extension understands semantic version range operators (`^`, `~`, `>=`, `*`, etc.) and interprets them correctly.
+
+Update classification is based on the **minimum version** the constraint installs (i.e. the version that would be recorded in a fresh lockfile), not on whether the latest version satisfies the range. This matters because a lockfile pin is only updated when it is explicitly refreshed — the declared range alone does not guarantee an up-to-date install.
+
+For example, `~3.8.0` allows `3.8.x`, but a lockfile created from it will record `3.8.0`. If `3.8.1` is released, the extension reports a **patch update** even though `3.8.1` is technically within the declared range.
+
+Only when no version newer than the constraint's minimum exists is the dependency shown as **up to date**.
 
 ---
 

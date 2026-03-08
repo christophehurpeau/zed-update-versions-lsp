@@ -450,6 +450,7 @@ Label text mapping:
 | Patch update | `↑ {version}` |
 | Minor update | `↑ {version}` |
 | Major update | `↑ {version}` |
+| Version not found | `✘ not found` (tooltip lists available higher versions as candidates) |
 | Not found | `✘ not found` |
 | Unsupported syntax | `⊘ unsupported` |
 | Loading | `… fetching` (optimistic; replaced on resolution) |
@@ -748,9 +749,14 @@ The server uses the [`semver`](https://crates.io/crates/semver) Rust crate as th
 
 For each dependency:
 1. Normalize the version constraint to a `semver`-compatible range string.
-2. Parse into `semver::VersionReq` and call `.matches(&latest_version)`.
-3. If matched → state = `UpToDate`.
-4. If not → compare `latest_version` against the highest current satisfying version (via `semver::Version`) to determine `patch`, `minor`, or `major` bump.
+2. Parse into `semver::VersionReq`; extract the **base version** (minimum version installed by a fresh lockfile) from the constraint string, e.g. `~3.8.0` → `3.8.0`.
+3. Iterate every known stable version. For each one:
+   - If it satisfies `VersionReq`, record it as `in_range` (used in the tooltip to show the highest in-range version).
+   - **Independently**, if it is greater than the base version, classify it as a `patch`, `minor`, or `major` candidate.
+4. If any candidate was found → state = `UpdateAvailable`; the hint shows the most significant candidate.
+5. If no candidate was found → state = `UpToDate`.
+
+The key design decision: `in_range` membership does **not** suppress the update classification. A constraint like `~3.8.0` installs `3.8.0` in a fresh lockfile; if `3.8.1` exists it is a patch update regardless of being within the range, because the lockfile will not advance to it unless explicitly refreshed.
 
 ### 7.2 Operator Preservation on Update
 
