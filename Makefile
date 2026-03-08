@@ -7,8 +7,11 @@ EXT_BIN_DIR    := extension/bin
 ## Install required toolchain and tools (run once after cloning).
 setup:
 	rustup target add wasm32-wasip1
-	cargo install rusty-hook
-	cargo test --manifest-path lsp-server/Cargo.toml --no-run
+	@mkdir -p .git/hooks
+	@printf '#!/bin/sh\nexport PATH="$$HOME/.cargo/bin:$$PATH"\ncargo fmt --all -- --check && cargo clippy --manifest-path lsp-server/Cargo.toml -- -D warnings && cargo clippy --manifest-path extension/Cargo.toml --target wasm32-wasip1 -- -D warnings\n' > .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@printf '#!/bin/sh\nexport PATH="$$HOME/.cargo/bin:$$PATH"\ncargo test --manifest-path lsp-server/Cargo.toml && cargo build --manifest-path extension/Cargo.toml --target wasm32-wasip1\n' > .git/hooks/pre-push
+	@chmod +x .git/hooks/pre-push
 	@echo "Setup complete. Git hooks installed."
 
 ## Format and lint both crates.
