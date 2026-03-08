@@ -64,10 +64,12 @@ impl UpdateVersionsExtension {
             Os::Windows => ".exe",
             _ => "",
         };
-        let binary_path = format!("bin/update-versions-lsp{ext}");
+        let binary_name = format!("update-versions-lsp{ext}");
+        // Relative path: where production downloads land (work dir).
+        let binary_path = format!("bin/{binary_name}");
 
-        // If not already present (e.g. placed there by `make install-dev`),
-        // download the appropriate release asset.
+        // If not already present in the work dir, download the appropriate
+        // release asset from GitHub Releases.
         if !std::fs::metadata(&binary_path).is_ok_and(|m| m.is_file()) {
             let (os_str, arch_str) = match (os, arch) {
                 (Os::Mac, Architecture::Aarch64) => ("apple-darwin", "aarch64"),
