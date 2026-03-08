@@ -15,8 +15,7 @@ After cloning, run:
 make setup
 ```
 
-This installs the `wasm32-wasip1` target, the `rusty-hook` binary (needed by the
-git hooks), and triggers hook installation.
+This installs the `wasm32-wasip1` rustup target and writes the git hooks.
 
 ---
 
@@ -37,7 +36,7 @@ lsp-server/       Native LSP server binary (Rust)
 make build-lsp
 ```
 
-This compiles `lsp-server/` in release mode and places the binary at `lsp-server/target/release/update-versions-lsp`.
+This compiles `lsp-server/` in release mode and places the binary at `target/release/update-versions-lsp`.
 
 ### 2. Install the binary for the dev extension
 
@@ -63,10 +62,10 @@ make clean && make install-dev
 
 ```sh
 # LSP server unit tests
-cd lsp-server && cargo test
+cargo test -p update-versions-lsp
 
 # Extension (WASM) — build check only (no testable logic)
-cd extension && cargo build --target wasm32-wasip1
+cargo build -p update-versions --target wasm32-wasip1
 ```
 
 ---
