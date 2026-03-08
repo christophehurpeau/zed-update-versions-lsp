@@ -6,12 +6,17 @@ Thank you for your interest in contributing to zed-update-versions!
 
 ## Prerequisites
 
-- [Rust](https://rustup.rs/) (stable toolchain + `wasm32-wasip1` target)
+- [Rust](https://rustup.rs/) (stable toolchain)
 - [Zed](https://zed.dev/) (latest stable or preview)
 
+After cloning, run:
+
 ```sh
-rustup target add wasm32-wasip1
+make setup
 ```
+
+This installs the `wasm32-wasip1` target, the `rusty-hook` binary (needed by the
+git hooks), and triggers hook installation.
 
 ---
 
@@ -68,12 +73,12 @@ cd extension && cargo build --target wasm32-wasip1
 
 ## Linting & formatting
 
-The project uses standard Rust tooling. Before opening a PR, please run:
-
 ```sh
-cd lsp-server
-cargo fmt --check
-cargo clippy -- -D warnings
+# Check formatting and clippy for both crates
+make lint
+
+# Auto-format both crates
+make fmt
 ```
 
 ---

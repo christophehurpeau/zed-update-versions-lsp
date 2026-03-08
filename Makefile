@@ -2,7 +2,26 @@ LSP_BIN_NAME   := update-versions-lsp
 LSP_RELEASE    := lsp-server/target/release/$(LSP_BIN_NAME)
 EXT_BIN_DIR    := extension/bin
 
-.PHONY: build-lsp install-dev clean
+.PHONY: setup build-lsp install-dev lint fmt clean
+
+## Install required toolchain and tools (run once after cloning).
+setup:
+	rustup target add wasm32-wasip1
+	cargo install rusty-hook
+	cargo test --manifest-path lsp-server/Cargo.toml --no-run
+	@echo "Setup complete. Git hooks installed."
+
+## Format and lint both crates.
+lint:
+	cargo fmt --check --manifest-path lsp-server/Cargo.toml
+	cargo clippy --manifest-path lsp-server/Cargo.toml -- -D warnings
+	cargo fmt --check --manifest-path extension/Cargo.toml
+	cargo clippy --manifest-path extension/Cargo.toml --target wasm32-wasip1 -- -D warnings
+
+## Auto-format both crates.
+fmt:
+	cargo fmt --manifest-path lsp-server/Cargo.toml
+	cargo fmt --manifest-path extension/Cargo.toml
 
 ## Build the native LSP server binary (release mode).
 build-lsp:
