@@ -1,11 +1,11 @@
 [package]
 name = "update-versions"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
-license = "MIT"
+license.workspace = true
 description = "Inline version hints for package manifest files in Zed."
-repository = "https://github.com/christophehurpeau/zed-update-versions"
-authors = ["Christophe Hurpeau <christophe@hurpeau.com>"]
+repository.workspace = true
+authors.workspace = true
 
 [lib]
 crate-type = ["cdylib"]

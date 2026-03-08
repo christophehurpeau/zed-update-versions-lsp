@@ -19,8 +19,9 @@ use zed_extension_api::{
     LanguageServerInstallationStatus, Os, Result, Worktree,
 };
 
-/// Version of the LSP server to download.  Must match a published `lsp-v*` tag.
-const LSP_VERSION: &str = "0.1.0";
+/// Version of the LSP server to download.  Kept in sync with the workspace
+/// version — both crates are released together via release-plz.
+const LSP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 struct UpdateVersionsExtension {
     /// Cache the resolved binary path within the extension host's lifetime.

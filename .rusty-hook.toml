@@ -1,5 +1,5 @@
 [hooks]
-pre-commit = "cargo fmt --check --manifest-path lsp-server/Cargo.toml && cargo clippy --manifest-path lsp-server/Cargo.toml -- -D warnings && cargo fmt --check --manifest-path extension/Cargo.toml && cargo clippy --manifest-path extension/Cargo.toml --target wasm32-wasip1 -- -D warnings"
+pre-commit = "cargo fmt --all -- --check && cargo clippy --manifest-path lsp-server/Cargo.toml -- -D warnings && cargo clippy --manifest-path extension/Cargo.toml --target wasm32-wasip1 -- -D warnings"
 pre-push = "cargo test --manifest-path lsp-server/Cargo.toml && cargo build --manifest-path extension/Cargo.toml --target wasm32-wasip1"
 
 [logging]

@@ -1,11 +1,11 @@
 [package]
 name = "update-versions-lsp"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
-license = "MIT"
+license.workspace = true
 description = "LSP server for the zed-update-versions extension."
-repository = "https://github.com/christophehurpeau/zed-update-versions"
-authors = ["Christophe Hurpeau <christophe@hurpeau.com>"]
+repository.workspace = true
+authors.workspace = true
 
 [[bin]]
 name = "update-versions-lsp"

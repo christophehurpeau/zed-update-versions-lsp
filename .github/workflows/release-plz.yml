@@ -1,0 +1,32 @@
+name: release-plz
+
+# Runs on every push to main.
+# release-plz either opens/updates a "release PR" (with version bump +
+# CHANGELOG update) or, if the release PR was just merged, pushes the git tag
+# that triggers the binary-build workflow.
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-plz:
+    name: Release-plz
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz
+        uses: release-plz/action@v0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

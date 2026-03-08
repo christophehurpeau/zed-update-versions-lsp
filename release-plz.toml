@@ -1,0 +1,27 @@
+# release-plz.toml
+#
+# release-plz watches conventional commits on `main` and, when changes are
+# detected, opens a "release PR" that bumps the workspace version and updates
+# CHANGELOG.md.  Merging that PR causes release-plz to push a git tag, which
+# in turn triggers the binary-build workflow (.github/workflows/release-lsp.yml).
+#
+# Docs: https://release-plz.dev/docs/config
+
+[workspace]
+# Never publish to crates.io — binaries are distributed via GitHub Releases.
+publish = false
+
+[[package]]
+name = "update-versions-lsp"
+# Must match the `on.push.tags` pattern in release-lsp.yml.
+tag_name = "lsp-v{{ version }}"
+# Write changelog entries to the root CHANGELOG.md (LSP drives the history).
+changelog_path = "CHANGELOG.md"
+changelog_config = "cliff.toml"
+
+[[package]]
+name = "update-versions"
+tag_name = "extension-v{{ version }}"
+# The extension (WASM shim) follows the same version as the LSP server but
+# doesn't need its own changelog section — changes are reflected in the LSP's.
+changelog_update = false

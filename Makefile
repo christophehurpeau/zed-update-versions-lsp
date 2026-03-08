@@ -1,5 +1,5 @@
 LSP_BIN_NAME   := update-versions-lsp
-LSP_RELEASE    := lsp-server/target/release/$(LSP_BIN_NAME)
+LSP_RELEASE    := target/release/$(LSP_BIN_NAME)
 EXT_BIN_DIR    := extension/bin
 
 .PHONY: setup build-lsp install-dev lint fmt clean
@@ -13,19 +13,17 @@ setup:
 
 ## Format and lint both crates.
 lint:
-	cargo fmt --check --manifest-path lsp-server/Cargo.toml
+	cargo fmt --all -- --check
 	cargo clippy --manifest-path lsp-server/Cargo.toml -- -D warnings
-	cargo fmt --check --manifest-path extension/Cargo.toml
 	cargo clippy --manifest-path extension/Cargo.toml --target wasm32-wasip1 -- -D warnings
 
 ## Auto-format both crates.
 fmt:
-	cargo fmt --manifest-path lsp-server/Cargo.toml
-	cargo fmt --manifest-path extension/Cargo.toml
+	cargo fmt --workspace
 
 ## Build the native LSP server binary (release mode).
 build-lsp:
-	cargo build --release --manifest-path lsp-server/Cargo.toml
+	cargo build --release -p update-versions-lsp
 
 ## Build the LSP server and copy the binary into extension/bin/
 ## so that the dev extension can find it.
@@ -37,5 +35,5 @@ install-dev: build-lsp
 
 ## Remove build artefacts.
 clean:
-	cargo clean --manifest-path lsp-server/Cargo.toml
+	cargo clean
 	rm -rf $(EXT_BIN_DIR)

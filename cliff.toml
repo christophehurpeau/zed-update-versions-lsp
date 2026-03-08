@@ -1,0 +1,44 @@
+# cliff.toml — configuration for git-cliff (used by release-plz)
+# Conventional Commits → grouped CHANGELOG entries.
+
+[changelog]
+header = """# Changelog
+
+All notable changes to this project will be documented in this file.
+
+"""
+body = """
+{% if version -%}
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+## [unreleased]
+{% endif -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | strtitle }}
+{% for commit in commits -%}
+- {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message | upper_first }}
+{% endfor %}
+{% endfor %}
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+commit_preprocessors = []
+commit_parsers = [
+  { message = "^feat",           group = "Added" },
+  { message = "^fix",            group = "Fixed" },
+  { message = "^perf",           group = "Performance" },
+  { message = "^refactor",       group = "Refactored" },
+  { message = "^docs?",          group = "Documentation" },
+  { message = "^chore\\(deps\\)", group = "Dependencies" },
+  { message = "^chore",          skip = true },
+  { message = "^ci",             skip = true },
+  { message = "^style",          skip = true },
+  { message = "^test",           skip = true },
+]
+filter_commits = true
+tag_pattern = "lsp-v[0-9].*"
