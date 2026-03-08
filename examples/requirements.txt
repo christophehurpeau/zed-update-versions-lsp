@@ -1,0 +1,28 @@
+# Example requirements.txt for testing update-versions inlay hints
+
+# HTTP / Web
+requests==2.28.0
+flask>=2.0.0
+httpx~=0.24.0
+
+# Data
+numpy>=1.23.0
+pandas==1.5.3
+scipy>=1.10.0
+
+# CLI / Utilities
+click>=8.1.0
+rich>=13.0.0
+pydantic>=1.10.0
+
+# Testing (no version — skipped by the provider)
+pytest
+
+# Development
+black>=23.1.0
+mypy>=1.0.0
+ruff>=0.0.260
+
+# With extras
+requests[security]>=2.28.0
+uvicorn[standard]>=0.21.0

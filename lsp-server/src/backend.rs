@@ -32,6 +32,7 @@ fn build_providers(settings: &Settings) -> ProviderRegistry {
     registry.register(Arc::new(crate::providers::cargo::CargoProvider::new(
         settings.cargo.dependency_keys.clone(),
     )));
+    registry.register(Arc::new(crate::providers::pypi::PypiProvider::new()));
     registry
 }
 

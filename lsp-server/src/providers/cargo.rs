@@ -146,7 +146,7 @@ fn parse_cargo_toml(content: &str, dependency_keys: &[String]) -> Vec<ParsedDepe
         };
 
         for (name, value) in table {
-            let version_constraint = match extract_cargo_version(value) {
+            let version_constraint = match extract_toml_version(value) {
                 Some(v) => v,
                 None => continue, // path/git dependency → skip
             };
@@ -180,7 +180,7 @@ fn resolve_toml_key<'a>(value: &'a toml::Value, key: &str) -> Option<&'a toml::V
 ///  - Plain string: `"1.0"`
 ///  - Table with `version` key: `{ version = "1.0", features = [...] }`
 ///  - Table with only `path`/`git` → returns None
-fn extract_cargo_version(value: &toml::Value) -> Option<String> {
+pub(crate) fn extract_toml_version(value: &toml::Value) -> Option<String> {
     match value {
         toml::Value::String(s) => Some(s.clone()),
         toml::Value::Table(t) => t.get("version")?.as_str().map(|s| s.to_string()),
@@ -189,7 +189,7 @@ fn extract_cargo_version(value: &toml::Value) -> Option<String> {
 }
 
 /// Find the line and character range of a version string in the TOML source.
-fn find_toml_version_range(
+pub(crate) fn find_toml_version_range(
     lines: &[&str],
     dep_key: &str,
     name: &str,
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn test_extract_cargo_version_string() {
         let val = toml::Value::String("1.0.0".to_string());
-        assert_eq!(extract_cargo_version(&val), Some("1.0.0".to_string()));
+        assert_eq!(extract_toml_version(&val), Some("1.0.0".to_string()));
     }
 
     #[test]
@@ -274,7 +274,7 @@ features = ["derive"]
 "#;
         let parsed: toml::Value = toml_str.parse().unwrap();
         let val = parsed.get("dep").unwrap();
-        assert_eq!(extract_cargo_version(val), Some("1.0.0".to_string()));
+        assert_eq!(extract_toml_version(val), Some("1.0.0".to_string()));
     }
 
     #[test]
@@ -285,7 +285,7 @@ path = "../my-crate"
 "#;
         let parsed: toml::Value = toml_str.parse().unwrap();
         let val = parsed.get("dep").unwrap();
-        assert_eq!(extract_cargo_version(val), None);
+        assert_eq!(extract_toml_version(val), None);
     }
 
     #[test]
@@ -296,7 +296,7 @@ git = "https://github.com/user/repo"
 "#;
         let parsed: toml::Value = toml_str.parse().unwrap();
         let val = parsed.get("dep").unwrap();
-        assert_eq!(extract_cargo_version(val), None);
+        assert_eq!(extract_toml_version(val), None);
     }
 
     #[test]

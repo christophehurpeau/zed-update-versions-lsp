@@ -1,0 +1,21 @@
+[package]
+name = "my-app"
+version = "0.1.0"
+edition = "2021"
+description = "Example Cargo.toml for testing update-versions inlay hints"
+
+[dependencies]
+serde = { version = "1.0.0", features = ["derive"] }
+tokio = { version = "1.28.0", features = ["full"] }
+reqwest = { version = "0.11.0", features = ["json"] }
+anyhow = "1.0.0"
+clap = { version = "4.2.0", features = ["derive"] }
+tracing = "0.1.0"
+tracing-subscriber = "0.3.0"
+
+[dev-dependencies]
+tokio = { version = "1.28.0", features = ["full", "test-util"] }
+criterion = "0.5.0"
+
+[build-dependencies]
+build-info-build = "0.0.34"

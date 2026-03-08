@@ -60,8 +60,8 @@
 
 ## Phase 2 — Python & TOML (v0.2)
 
-- [ ] `providers/pypi.rs` — `requirements.txt` + `pyproject.toml`
-- [ ] Unit tests for PyPI provider
+- [x] `providers/pypi.rs` — `requirements.txt` + `pyproject.toml`
+- [x] Unit tests for PyPI provider
 
 ## Phase 3 — Web Ecosystem (v0.3)
 

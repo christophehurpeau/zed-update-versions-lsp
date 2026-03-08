@@ -19,6 +19,6 @@ name = "Update Versions LSP"
 languages = [
   "JSON",
   "TOML",
-  "Plain Text",
+  "Python requirements",
   "Ruby",
 ]
