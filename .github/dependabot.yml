@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+
+  - package-ecosystem: "cargo"
+    directory: "/"
+    exclude-paths:
+      - "examples/**"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    exclude-paths:
+      - "examples/**"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    exclude-paths:
+      - "examples/**"
+    schedule:
+      interval: "monthly"
+
