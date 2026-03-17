@@ -3,7 +3,7 @@ name = "update-versions-lsp"
 version.workspace = true
 edition = "2021"
 license.workspace = true
-description = "LSP server for the zed-update-versions extension."
+description = "LSP server for the update-versions-lsp extension."
 repository.workspace = true
 authors.workspace = true
 

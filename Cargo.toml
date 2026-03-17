@@ -5,5 +5,5 @@ resolver = "2"
 [workspace.package]
 version = "0.1.1"
 license = "MIT"
-repository = "https://github.com/christophehurpeau/zed-update-versions"
+repository = "https://github.com/christophehurpeau/zed-update-versions-lsp"
 authors = ["Christophe Hurpeau <christophe@hurpeau.com>"]

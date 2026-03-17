@@ -1,8 +1,8 @@
-# zed-update-versions
+# zed-update-versions-lsp
 
 A [Zed](https://zed.dev) extension that shows the latest available version for each dependency declared in your project's package manifests — directly inline in the editor, as inlay hints.
 
-[![CI](https://github.com/christophehurpeau/zed-update-versions/actions/workflows/ci.yml/badge.svg)](https://github.com/christophehurpeau/zed-update-versions/actions/workflows/ci.yml)
+[![CI](https://github.com/christophehurpeau/zed-update-versions-lsp/actions/workflows/ci.yml/badge.svg)](https://github.com/christophehurpeau/zed-update-versions-lsp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
@@ -43,7 +43,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for building from source and installing t
 
 ## Configuration
 
-Settings live under `"update-versions"` in Zed's `settings.json`:
+Settings live under `"update-versions-lsp"` in Zed's `settings.json`:
 
 ```jsonc
 {
