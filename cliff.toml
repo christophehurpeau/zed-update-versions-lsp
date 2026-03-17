@@ -14,7 +14,7 @@ body = """
 ## [unreleased]
 {% endif -%}
 {% for group, commits in commits | group_by(attribute="group") %}
-### {{ group | strtitle }}
+### {{ group | upper_first }}
 {% for commit in commits -%}
 - {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message | upper_first }}
 {% endfor %}
