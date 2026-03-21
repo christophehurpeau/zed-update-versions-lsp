@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- release-plz prepends new entries above this line -->
 
+## [0.2.0] - 2026-03-21
+
+### Added
+- Initial features
+- Add PyPI provider and example configuration files
+- Add VersionNotFound inlay hint with latest/upgrade info
+- Add support for npm package aliases in parse_package_json
+- Implement inflight deduplication and proactive fetching in VersionCache
+- Implement hot-reload support for cache TTL and logging configuration
+- Implement background expiry sweep and fetch deduplication in VersionCache
+- Add support for ruby, deno and composer
+
+
+### Dependencies
+- Bump reqwest from 0.12.28 to 0.13.2 ([#7](https://github.com/christophehurpeau/zed-update-versions-lsp/pull/7))
+
+
+### Fixed
+- Always classify in-range versions newer than base as updates
+
+
+
 ## [0.1.1] - 2026-03-17
 
 ### Added
