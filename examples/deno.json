@@ -1,0 +1,21 @@
+{
+  "name": "my-deno-app",
+  "version": "1.0.0",
+  "description": "Example deno.json for testing update-versions inlay hints",
+  "imports": {
+    "@std/path": "jsr:@std/path@^0.221.0",
+    "@std/assert": "jsr:@std/assert@^0.221.0",
+    "@std/fmt": "jsr:@std/fmt@^0.221.0",
+    "express": "npm:express@^4.18.0",
+    "@types/express": "npm:@types/express@^4.17.0",
+    "zod": "npm:zod@^3.22.0",
+    "oak": "https://deno.land/x/oak@v12.6.1/mod.ts",
+    "dotenv": "https://deno.land/x/dotenv@v3.2.2/mod.ts",
+    "std/": "https://deno.land/std@0.220.0/",
+    "src/": "./src/"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "noUnusedLocals": true
+  }
+}

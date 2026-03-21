@@ -239,7 +239,7 @@ use tower_lsp::{LspService, Server};
 mod backend;
 mod cache;
 mod config;
-mod semver_utils;
+mod version_utils;
 mod providers;
 
 #[tokio::main]
@@ -339,9 +339,18 @@ lsp-server/src/
   backend.rs               ← LanguageServer impl (tower-lsp)
   config.rs                ← ConfigManager (settings, toggles)
   cache.rs                 ← VersionCache (tokio::RwLock, per-process)
-  semver_utils.rs          ← range comparisons, operator preservation
+  version_utils/
+    mod.rs                 ← public API: find_update_candidates, find_latest,
+                              build_replacement_text, extract_base_version,
+                              is_prerelease_constraint, prerelease_newer_than_constraint
+    normalize/
+      mod.rs               ← standard() — npm, Cargo, Composer, Pub
+      ruby.rs              ← ruby()     — RubyGems, Dub
+      python.rs            ← python()   — PyPI
+      deno.rs              ← deno()     — Deno deno.land/x specifiers
   providers/
     mod.rs                 ← ProviderRegistry + Provider trait
+                              (Provider::normalize_constraint dispatches to version_utils::normalize)
     npm.rs                 ← package.json              (Phase 1)
     cargo.rs               ← Cargo.toml                (Phase 1)
     pypi.rs                ← requirements.txt, pyproject.toml  (Phase 2+)
@@ -358,37 +367,37 @@ lsp-server/src/
 ### 3.5 Provider Trait
 
 ```rust
-use async_trait::async_trait;
-use tower_lsp::lsp_types::*;
-use crate::{cache::VersionCache, config::ConfigManager};
-
-pub struct ParsedDependency {
-    pub name:            String,
-    pub current_version: String,  // raw string from file (may include range operators)
-    pub line:            u32,     // 0-based line number
-    pub version_range:   Range,   // character range of the version string
-}
-
-pub struct VersionResult {
-    pub stable:     Option<String>,
-    pub prerelease: Option<String>,
-}
-
 #[async_trait]
 pub trait Provider: Send + Sync {
-    /// File path substring patterns matched against the document URI.
-    fn file_patterns(&self) -> &[&'static str];
+    /// File name patterns this provider handles (matched against the document URI path).
+    fn file_patterns(&self) -> &[&str];
 
-    /// Parse the document content and return all dependency entries.
-    fn parse_dependencies(&self, content: &str) -> Vec<ParsedDependency>;
+    /// Parse a document and extract dependencies.
+    fn parse_dependencies(&self, uri: &str, content: &str) -> Vec<ParsedDependency>;
 
-    /// Fetch the latest stable (and optionally prerelease) version for a package.
-    async fn fetch_latest_version(
-        &self,
-        name: &str,
-        config: &ConfigManager,
-        cache: &VersionCache,
-    ) -> VersionResult;
+    /// Fetch the latest version(s) of a package from the registry.
+    async fn fetch_version(&self, package_name: &str) -> VersionResult;
+
+    /// Return the provider name (used as cache key prefix).
+    fn name(&self) -> &str;
+
+    /// Translate an ecosystem-specific version constraint to a string that
+    /// `semver::VersionReq` can parse.
+    ///
+    /// The default handles bare versions and standard semver operators
+    /// (`^`, `~`, `>=`, …) — correct for npm, Cargo, Composer, Pub.
+    ///
+    /// Providers with non-standard syntax override this:
+    ///
+    /// | Provider   | Override                            |
+    /// |------------|-------------------------------------|
+    /// | RubyGems   | `version_utils::normalize::ruby`    |
+    /// | Dub        | `version_utils::normalize::ruby`    |
+    /// | PyPI       | `version_utils::normalize::python`  |
+    /// | Deno       | `version_utils::normalize::deno`    |
+    fn normalize_constraint(&self, constraint: &str) -> String {
+        version_utils::normalize::standard(constraint)
+    }
 }
 ```
 
@@ -596,9 +605,10 @@ Version constraints use Composer syntax (`^`, `~`, `>=`, `||`, `*`, `dev-main`).
 
 **Registry API:**
 ```
-GET https://packagist.org/packages/{vendor}/{package}.json
+GET https://repo.packagist.org/p2/{vendor}/{package}.json
 ```
-Latest stable: `package.versions` — find the highest non-dev, non-prerelease tag.
+Returns a `packages` map keyed by package name, each containing a version→metadata map.  
+Latest stable: find the highest version key that is not a dev/prerelease tag (no `alpha`, `beta`, `-RC`, `dev` in the version string).
 
 ---
 
@@ -700,21 +710,22 @@ with anonymous/token auth as required.
 
 ---
 
-### 6.10 Deno (`deno.json`, `import_map.json`)
+### 6.10 Deno (`deno.json`, `deno.jsonc`, `import_map.json`)
 
 **Parsing:**  
-JSON. Walk `imports` map. Values are URL strings such as:
+JSON (with JSONC single-line `//` comment stripping). Walk `imports` map and `scopes` sub-maps. Values are URL strings such as:
 - `https://deno.land/x/{module}@{version}/...` → extract module + version
 - `npm:{package}@{version}` → extract npm package + version
 - `jsr:@{scope}/{package}@{version}` → JSR package + version
-- Bare `/` paths or `./` → Unsupported
+- Bare `/` or `./` entries (path prefixes ending in `/`) → skip
 
 **Registry APIs:**
 
 *deno.land/x:*
 ```
-GET https://apiland.deno.dev/v2/modules/{module}
+GET https://cdn.deno.land/{module}/meta/versions.json
 ```
+Returns `{ "versions": ["v1.2.3", ...] }`. Parse semver from the version list; the `v` prefix is preserved in replacements.
 
 *npm (via Deno npm specifiers):* → same as npm provider
 
@@ -722,6 +733,7 @@ GET https://apiland.deno.dev/v2/modules/{module}
 ```
 GET https://jsr.io/@{scope}/{package}/meta.json
 ```
+Returns `{ "versions": { "1.0.0": {}, ... } }`. Parse semver from version keys.
 
 ---
 
@@ -747,12 +759,78 @@ Extract `version` (stable) and `version` from gems with prerelease version strin
 
 ## 7. Semver Handling
 
-The server uses the [`semver`](https://crates.io/crates/semver) Rust crate as the canonical semver evaluator for all ecosystems (adapting syntax where necessary).
+The server uses the [`semver`](https://crates.io/crates/semver) Rust crate (v1) as the **canonical version evaluator** for all ecosystems. Version strings are first normalised from each ecosystem's native syntax into standard semver range notation (see §7.3), then parsed by `semver::VersionReq` / `semver::Version`.
 
-### 7.1 Range Evaluation
+### 7.1 Module Layout
+
+`version_utils` is the module responsible for all version constraint evaluation —
+using the `semver` crate internally, but handling constraints from every supported ecosystem.
+
+```
+lsp-server/src/version_utils/
+  mod.rs          ← public API: extract_base_version, find_update_candidates,
+                    find_latest, build_replacement_text,
+                    is_prerelease_constraint, prerelease_newer_than_constraint
+  normalize/
+    mod.rs        ← standard() — npm, Cargo, Composer, Pub (bare version + semver pass-through)
+    ruby.rs       ← ruby()     — RubyGems, Dub (~> pessimistic operator)
+    python.rs     ← python()   — PyPI (PEP 440 == and ~= operators)
+    deno.rs       ← deno()     — Deno deno.land/x specifiers (v-prefix stripping)
+```
+
+Each normaliser is `pub` and re-exported through `version_utils::normalize::*`.
+Providers select the one that matches their ecosystem by overriding
+`Provider::normalize_constraint` (see §3.5).
+
+### 7.2 Ecosystem Versioning: Semver Compliance Table
+
+All ecosystems below use semver-compatible version numbers (major.minor.patch), though
+they may use different **constraint syntax** that must be normalised:
+
+| Ecosystem | Spec | Contract syntax | Native operators | Normalisation needed |
+|-----------|------|-----------------|-----------------|----------------------|
+| **npm** | semver (https://semver.org) | npm ranges (^, ~, >=, <=, >, <, =, \|\|, * ) | `^`, `~`, `>=`, `*` | Fully semver-compatible; `semver` crate handles these directly |
+| **Cargo** | semver (https://semver.org) | Cargo ranges | Same as npm, plus bare version `"1.2"` | Bare version treated as `^1.2` by Cargo *and* by the `semver` crate |
+| **PyPI** | PEP 440 (not pure semver) | PEP 440 specifiers | `==`, `>=`, `~=`, `!=`, `<`, `>` | `==x` → `=x`, `~=x.y` → `~x.y`; version strings normalised to 3 components |
+| **Composer** | semver-like | Composer ranges | `^`, `~`, `>=`, `\|\|`, `*`, `dev-*` | Standard operators pass through; `dev-*` → Unsupported |
+| **RubyGems** | semver-like | Pessimistic (`~>`), `>=`, `<` | `~>` | `~> x.y` → `>=x.y.0, <(x+1).0.0`; `~> x.y.z` → `~x.y.z` |
+| **Deno/JSR** | semver | semver ranges + bare `v`-prefix | `^`, `~`, `>=`, `v` prefix | Strip `v` prefix before parsing |
+| **Pub (Flutter)** | semver-like | Dart pub constraints | `^`, `>=`, `<` | Standard operators; pass through |
+| **NuGet** | semver 2.0 (1.0 in practice) | Interval notation `[x,y)`, `[x]`, bare `x.y.z` | `[x,y)`, `(x,y]`, `[x]` | Interval notation must be translated (future work; bare versions handled) |
+| **Maven** | flexible (not strict semver) | Bare `x.y.z` or range `[x,y)` | bare, `[x,y)` | Similar to NuGet interval notation; bare versions pass through |
+| **Dub (D)** | semver-like | `~>`, `==`, `>=` | `~>` | Same as RubyGems pessimistic |
+| **Docker** | image tags (not semver) | Exact tag string | none | Tags compared as semver only when parseable; others → Unsupported |
+
+> **PyPI note:** PEP 440 is not pure semver. It adds `.post` (post-release) and `.dev` (dev release)
+> suffixes, and uses `aN`/`bN`/`rcN` for pre-releases instead of `-alpha.N`. The server maps these
+> to semver pre-release identifiers for internal comparison only; the original string (e.g. `1.0rc1`)
+> is preserved when writing replacements.
+
+> **NuGet / Maven note:** These use interval notation (`[1.0,2.0)`) rather than semver operators.
+> Full interval-to-VersionReq translation is deferred to Phase 4. For now, bare version strings
+> (the common case in real projects) are passed through and treated as `^x.y.z`.
+
+### 7.3 Constraint Normalisation (`version_utils/normalize/`)
+
+`normalize_constraint` is the single translation layer from each ecosystem's native operator syntax
+to a string that `semver::VersionReq::parse` accepts.
+
+| Input (ecosystem) | Output (semver crate) |
+|---|---|
+| `~> 7` (Ruby) | `>=7.0.0, <8.0.0` |
+| `~> 7.1` (Ruby) | `>=7.1.0, <8.0.0` |
+| `~> 7.1.0` (Ruby) | `~7.1.0` |
+| `==1.2.3` (Python) | `=1.2.3` |
+| `~=1.2` (Python) | `~1.2` |
+| `v12.6.1` (Deno) | `12.6.1` |
+| `^1.2.0`, `~1.2.0`, `>=1.0.0` | unchanged |
+| `1.2` (bare, already valid) | `1.2` |
+| `1.2` (bare, not valid VersionReq) | `^1.2` |
+
+### 7.4 Range Evaluation
 
 For each dependency:
-1. Normalize the version constraint to a `semver`-compatible range string.
+1. Normalise the version constraint to a `semver`-compatible range string (§7.3).
 2. Parse into `semver::VersionReq`; extract the **base version** (minimum version installed by a fresh lockfile) from the constraint string, e.g. `~3.8.0` → `3.8.0`.
 3. Iterate every known stable version. For each one:
    - If it satisfies `VersionReq`, record it as `in_range` (used in the tooltip to show the highest in-range version).
@@ -762,7 +840,7 @@ For each dependency:
 
 The key design decision: `in_range` membership does **not** suppress the update classification. A constraint like `~3.8.0` installs `3.8.0` in a fresh lockfile; if `3.8.1` exists it is a patch update regardless of being within the range, because the lockfile will not advance to it unless explicitly refreshed.
 
-### 7.2 Operator Preservation on Update
+### 7.5 Operator Preservation on Update
 
 When applying an update, the new version string should respect the original operator:
 
@@ -773,6 +851,7 @@ When applying an update, the new version string should respect the original oper
 | `>=1.0.0 <2.0.0` | `2.0.0` | `>=2.0.0 <3.0.0` (naive increment of upper bound) |
 | `1.2.0` (bare) | `2.0.0` | `2.0.0` |
 | `~>1.2` (Ruby/Gemfile) | `1.3.0` | `~>1.3` |
+| `v12.6.1` (Deno) | `13.0.0` | `v13.0.0` |
 
 Rules:
 - Single-operator ranges: replace the version component, keep the operator.
@@ -1222,7 +1301,13 @@ zed-update-versions/
 │       ├── backend.rs                 ← LanguageServer impl  (Phase 1)
 │       ├── cache.rs                   ← VersionCache          (Phase 1)
 │       ├── config.rs                  ← ConfigManager         (Phase 1)
-│       ├── semver_utils.rs            ← range comparisons     (Phase 1)
+│       ├── version_utils/             ← version constraint evaluation
+       │   ├── mod.rs                 ← public API           (Phase 1)
+       │   └── normalize/
+       │       ├── mod.rs             ← standard (npm/Cargo) (Phase 1)
+       │       ├── ruby.rs            ← RubyGems/Dub         (Phase 3)
+       │       ├── python.rs          ← PyPI                 (Phase 2)
+       │       └── deno.rs            ← Deno                 (Phase 3)
 │       └── providers/
 │           ├── mod.rs
 │           ├── npm.rs                 ← Phase 1

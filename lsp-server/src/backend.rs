@@ -11,7 +11,7 @@ use tracing::{debug, info};
 use crate::cache::{VersionCache, VersionResult};
 use crate::config::{ConfigManager, Settings};
 use crate::providers::{DependencyStatus, ParsedDependency, ProviderRegistry, ResolvedDependency};
-use crate::semver_utils;
+use crate::version_utils;
 
 type LogReloadHandle =
     tracing_subscriber::reload::Handle<tracing_subscriber::EnvFilter, tracing_subscriber::Registry>;
@@ -37,6 +37,11 @@ fn build_providers(settings: &Settings) -> ProviderRegistry {
         settings.cargo.dependency_keys.clone(),
     )));
     registry.register(Arc::new(crate::providers::pypi::PypiProvider::new()));
+    registry.register(Arc::new(crate::providers::composer::ComposerProvider::new()));
+    registry.register(Arc::new(crate::providers::rubygems::RubyGemsProvider::new()));
+    registry.register(Arc::new(crate::providers::deno::DenoProvider::new(
+        settings.npm.registry.clone(),
+    )));
     registry
 }
 
@@ -102,7 +107,8 @@ impl Backend {
                 .resolve(&cache_key, || provider.fetch_version(&dep_name))
                 .await;
 
-            let status = classify_dependency(&dep, &version_result);
+            let status =
+                classify_dependency(&dep, &version_result, |c| provider.normalize_constraint(c));
             let prerelease = version_result.prerelease.clone();
 
             resolved.push(ResolvedDependency {
@@ -117,12 +123,22 @@ impl Backend {
 }
 
 /// Classify a dependency based on its parsed constraint and all known stable versions.
-fn classify_dependency(dep: &ParsedDependency, result: &VersionResult) -> DependencyStatus {
+/// The `normalize` closure translates the ecosystem's constraint syntax to semver
+/// (provided by the provider via [`Provider::normalize_constraint`]).
+fn classify_dependency(
+    dep: &ParsedDependency,
+    result: &VersionResult,
+    normalize: impl Fn(&str) -> String,
+) -> DependencyStatus {
     if result.stable_versions.is_empty() {
         return DependencyStatus::NotFound;
     }
 
-    match semver_utils::find_update_candidates(&dep.version_constraint, &result.stable_versions) {
+    match version_utils::find_update_candidates(
+        &dep.version_constraint,
+        &result.stable_versions,
+        normalize,
+    ) {
         Some(candidates) => match candidates.in_range {
             Some(in_range_version) => {
                 if candidates.patch.is_none()
@@ -142,7 +158,7 @@ fn classify_dependency(dep: &ParsedDependency, result: &VersionResult) -> Depend
             }
             None => {
                 // latest = highest available stable version regardless of constraint direction
-                let latest = semver_utils::find_latest(&result.stable_versions)
+                let latest = version_utils::find_latest(&result.stable_versions)
                     .unwrap_or_else(|| result.stable_versions[0].clone());
                 DependencyStatus::VersionNotFound {
                     latest,
@@ -220,7 +236,7 @@ fn hint_tooltip(dep: &ResolvedDependency) -> String {
                 lines.push(format!("Patch: ↑ {}", v));
             }
             if let Some(pre) = &dep.prerelease {
-                if semver_utils::is_prerelease_constraint(&dep.parsed.version_constraint) {
+                if version_utils::is_prerelease_constraint(&dep.parsed.version_constraint) {
                     lines.push(format!("Prerelease: {}", pre));
                 }
             }
@@ -416,7 +432,9 @@ impl LanguageServer for Backend {
             let cache_key = format!("{}:{}", provider_name, dep.name);
             let resolved = match self.cache.get(&cache_key).await {
                 Some(version_result) => {
-                    let status = classify_dependency(dep, &version_result);
+                    let status = classify_dependency(dep, &version_result, |c| {
+                        provider.normalize_constraint(c)
+                    });
                     let prerelease = version_result.prerelease.clone();
                     ResolvedDependency {
                         parsed: dep.clone(),
@@ -521,7 +539,7 @@ impl LanguageServer for Backend {
                     (major, "major", false),
                 ] {
                     if let Some(version) = candidate {
-                        let new_text = semver_utils::build_replacement_text(
+                        let new_text = version_utils::build_replacement_text(
                             &dep.parsed.version_constraint,
                             version,
                         );
@@ -551,7 +569,7 @@ impl LanguageServer for Backend {
                 // For VersionNotFound with no higher candidates, offer a "set to latest" action.
                 if let Some(latest) = latest_fallback {
                     if patch.is_none() && minor.is_none() && major.is_none() {
-                        let new_text = semver_utils::build_replacement_text(
+                        let new_text = version_utils::build_replacement_text(
                             &dep.parsed.version_constraint,
                             latest,
                         );
@@ -578,13 +596,13 @@ impl LanguageServer for Backend {
                 // Add prerelease action if available, newer than current, and not disabled
                 if let Some(pre) = &dep.prerelease {
                     let current_is_prerelease =
-                        semver_utils::is_prerelease_constraint(&dep.parsed.version_constraint);
-                    let pre_is_newer = semver_utils::prerelease_newer_than_constraint(
+                        version_utils::is_prerelease_constraint(&dep.parsed.version_constraint);
+                    let pre_is_newer = version_utils::prerelease_newer_than_constraint(
                         &dep.parsed.version_constraint,
                         pre,
                     );
                     if pre_is_newer && (!hide_prereleases || current_is_prerelease) {
-                        let pre_text = semver_utils::build_replacement_text(
+                        let pre_text = version_utils::build_replacement_text(
                             &dep.parsed.version_constraint,
                             pre,
                         );
@@ -713,7 +731,7 @@ mod tests {
             stable_versions: vec!["18.2.0".to_string()],
             prerelease: None,
         };
-        match classify_dependency(&dep, &result) {
+        match classify_dependency(&dep, &result, version_utils::normalize::standard) {
             DependencyStatus::UpToDate { .. } => {}
             other => panic!("Expected UpToDate, got {:?}", other),
         }
@@ -731,7 +749,7 @@ mod tests {
             stable_versions: vec!["1.0.0".to_string(), "2.0.0".to_string()],
             prerelease: None,
         };
-        match classify_dependency(&dep, &result) {
+        match classify_dependency(&dep, &result, version_utils::normalize::standard) {
             DependencyStatus::UpdateAvailable {
                 major: Some(_),
                 minor: None,
@@ -752,7 +770,7 @@ mod tests {
             stable_versions: vec![],
             prerelease: None,
         };
-        match classify_dependency(&dep, &result) {
+        match classify_dependency(&dep, &result, version_utils::normalize::standard) {
             DependencyStatus::NotFound => {}
             other => panic!("Expected NotFound, got {:?}", other),
         }
@@ -770,7 +788,7 @@ mod tests {
             stable_versions: vec!["1.0.0".to_string(), "1.0.5".to_string()],
             prerelease: None,
         };
-        match classify_dependency(&dep, &result) {
+        match classify_dependency(&dep, &result, version_utils::normalize::standard) {
             DependencyStatus::UpdateAvailable {
                 patch: Some(_),
                 minor: None,
@@ -792,7 +810,7 @@ mod tests {
             stable_versions: vec!["1.0.5".to_string()],
             prerelease: None,
         };
-        match classify_dependency(&dep, &result) {
+        match classify_dependency(&dep, &result, version_utils::normalize::standard) {
             DependencyStatus::VersionNotFound {
                 latest,
                 patch: Some(_),
@@ -818,7 +836,7 @@ mod tests {
             stable_versions: vec!["1.0.0".to_string()],
             prerelease: None,
         };
-        match classify_dependency(&dep, &result) {
+        match classify_dependency(&dep, &result, version_utils::normalize::standard) {
             DependencyStatus::VersionNotFound {
                 latest,
                 patch: None,
@@ -843,7 +861,7 @@ mod tests {
             stable_versions: vec!["1.3.0".to_string(), "1.2.5".to_string()],
             prerelease: None,
         };
-        match classify_dependency(&dep, &result) {
+        match classify_dependency(&dep, &result, version_utils::normalize::standard) {
             DependencyStatus::UpdateAvailable {
                 minor: Some(_),
                 major: None,
@@ -864,7 +882,7 @@ mod tests {
             stable_versions: vec!["1.0.0".to_string()],
             prerelease: None,
         };
-        match classify_dependency(&dep, &result) {
+        match classify_dependency(&dep, &result, version_utils::normalize::standard) {
             DependencyStatus::Unsupported => {}
             other => panic!("Expected Unsupported, got {:?}", other),
         }

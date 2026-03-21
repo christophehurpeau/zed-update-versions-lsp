@@ -1,6 +1,9 @@
 pub mod cargo;
+pub mod composer;
+pub mod deno;
 pub mod npm;
 pub mod pypi;
+pub mod rubygems;
 
 use std::sync::Arc;
 
@@ -73,6 +76,20 @@ pub trait Provider: Send + Sync {
 
     /// Return the provider name (used as cache key prefix).
     fn name(&self) -> &str;
+
+    /// Translate an ecosystem-specific version constraint to a string that
+    /// [`semver::VersionReq`] can parse.
+    ///
+    /// The default implementation handles bare versions and standard semver
+    /// operators (`^`, `~`, `>=`, …) — correct for npm, Cargo, Composer, Pub.
+    ///
+    /// Providers whose ecosystems use different syntax **must** override this:
+    /// - RubyGems / Dub → [`crate::version_utils::normalize::ruby`]
+    /// - PyPI            → [`crate::version_utils::normalize::python`]
+    /// - Deno (deno.land/x) → [`crate::version_utils::normalize::deno`]
+    fn normalize_constraint(&self, constraint: &str) -> String {
+        crate::version_utils::normalize::standard(constraint)
+    }
 }
 
 /// Registry that selects the right provider for a given document URI.

@@ -43,6 +43,10 @@ impl Provider for PypiProvider {
         "pypi"
     }
 
+    fn normalize_constraint(&self, constraint: &str) -> String {
+        crate::version_utils::normalize::python(constraint)
+    }
+
     fn parse_dependencies(&self, uri: &str, content: &str) -> Vec<ParsedDependency> {
         if uri.ends_with("requirements.txt") {
             parse_requirements_txt(content)

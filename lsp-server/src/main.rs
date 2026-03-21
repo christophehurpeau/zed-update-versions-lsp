@@ -7,7 +7,7 @@ mod backend;
 mod cache;
 mod config;
 mod providers;
-mod semver_utils;
+mod version_utils;
 
 #[tokio::main]
 async fn main() {

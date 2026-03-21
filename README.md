@@ -12,8 +12,8 @@ A [Zed](https://zed.dev) extension that shows the latest available version for e
 - **Inline version hints** — see at a glance whether a dependency is up to date, or has a patch / minor / major update available.
 - **Code actions** — apply a version update with a single `Cmd+.` on the dependency line.
 - **Prerelease awareness** — optionally surface prerelease versions (alpha, beta, rc…).
-- **In-memory cache** — registry responses are cached with a configurable TTL to keep the editor snappy.
-- **Supported ecosystems** (v0.2): npm / Node.js (`package.json`), Rust / Cargo (`Cargo.toml`), Python / PyPI (`requirements.txt`, `pyproject.toml`).
+- **Efficient in-memory cache** — responses are cached with a configurable TTL; inflight deduplication, proactive fetching, and background expiry reduce network chatter and improve responsiveness.
+- **Supported ecosystems**: npm / Node.js (`package.json`), Rust / Cargo (`Cargo.toml`), Python / PyPI (`requirements.txt`, `pyproject.toml`), Ruby / Bundler (`Gemfile`), Composer (`composer.json`), Deno (`deno.json`, `import_map.json`).
 
 | State | Label |
 |-------|-------|
@@ -22,6 +22,7 @@ A [Zed](https://zed.dev) extension that shows the latest available version for e
 | Minor update available | `↑ 1.3.0 (minor)` |
 | Major update available | `↑ 2.0.0 (major)` |
 | Package not found | `✘ not found` |
+| Version not found | `? latest` (shows latest/upgrade info) |
 | Unsupported constraint | `⊘ unsupported` |
 | Fetching | `… fetching` |
 

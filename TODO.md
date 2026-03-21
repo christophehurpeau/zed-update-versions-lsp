@@ -19,6 +19,13 @@
   - [x] `cache.rs` — `VersionCache` (in-memory, TTL, dedup)
   - [x] `config.rs` — `ConfigManager` (settings, toggles)
   - [x] `semver_utils.rs` — range parsing, comparison, operator preservation
+    - Renamed and refactored to `version_utils/` module:
+      - [x] `version_utils/mod.rs` — public API (`find_update_candidates` takes explicit normalizer fn, `find_latest`, `build_replacement_text`, `is_prerelease_constraint`, `prerelease_newer_than_constraint`, `extract_base_version`)
+      - [x] `version_utils/normalize/mod.rs` — `standard()` for npm, Cargo, Composer, Pub
+      - [x] `version_utils/normalize/ruby.rs` — `ruby()` for RubyGems & Dub (`~>` pessimistic)
+      - [x] `version_utils/normalize/python.rs` — `python()` for PyPI (PEP 440 `==`, `~=`)
+      - [x] `version_utils/normalize/deno.rs` — `deno()` for Deno deno.land/x (`v`-prefix)
+    - `Provider` trait gains `normalize_constraint()` (default = `standard`; overridden by rubygems, pypi, deno)
   - [x] `providers/mod.rs` — `Provider` trait + `ProviderRegistry`
   - [x] `providers/npm.rs` — npm registry provider
   - [x] `providers/cargo.rs` — crates.io provider
@@ -66,20 +73,28 @@
 
 ## Phase 3 — Web Ecosystem (v0.3)
 
-- [ ] `providers/composer.rs` — `composer.json`
-- [ ] `providers/deno.rs` — `deno.json`, `import_map.json`
-- [ ] `providers/rubygems.rs` — `Gemfile`
+- [x] `providers/composer.rs` — `composer.json`
+- [x] `providers/deno.rs` — `deno.json`, `import_map.json`
+- [x] `providers/rubygems.rs` — `Gemfile`
 
 ## Phase 4 — Enterprise & JVM (v0.4)
 
 - [ ] `providers/nuget.rs` — `.csproj`, `.fsproj`, `.vbproj`, `Directory.Packages.props`
+  - Version constraints use NuGet interval notation `[x,y)`, `(x,y]`, `[x]`; bare `x.y.z` is the common case
+  - Add `normalize_nuget_constraint` to `version_utils/normalize/nuget.rs`
 - [ ] `providers/maven.rs` — `pom.xml`
+  - Similar interval notation to NuGet; bare `x.y.z` is standard practice
+  - Maven versions are not strict semver (e.g. `1.2.3-SNAPSHOT`); add `version_utils/normalize/maven.rs`
 - [ ] `providers/pub.rs` — `pubspec.yaml`
+  - Dart pub uses semver-compatible constraints (`^`, `>=`, `<`); standard operators pass through unchanged
 
 ## Phase 5 — Systems & Infra (v0.5)
 
 - [ ] `providers/dub.rs` — `dub.json`, `dub.sdl`
+  - Uses `~>` pessimistic operator (same as Ruby); override `normalize_constraint` with `version_utils::normalize::ruby`
 - [ ] `providers/docker.rs` — `Dockerfile`
+  - Tags are **not** semver; only tags parseable as semver are compared — others → Unsupported
+  - No constraint syntax: each `FROM image:tag` is a pinned version, replacement is always bare `tag`
 - [ ] Private registry auth hardening
 - [ ] Dist tag / release channel filtering
 
