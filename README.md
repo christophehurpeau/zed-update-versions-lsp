@@ -7,6 +7,10 @@ A [Zed](https://zed.dev) extension that shows the latest available version for e
 
 ---
 
+Abandonned: https://github.com/zed-industries/extensions/pull/5153#issuecomment-4432480310
+
+---
+
 ## Features
 
 - **Inline version hints** — see at a glance whether a dependency is up to date, or has a patch / minor / major update available.
